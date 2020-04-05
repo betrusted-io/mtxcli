@@ -2,7 +2,7 @@
 
 Matrix Command Line Interface
 
-![mtxcli](docs/mtxcli-640.png)
+![mtxcli](docs/mtxcli-640x120.png)
 
 ## Usage
 
