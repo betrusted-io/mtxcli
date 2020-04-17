@@ -12,7 +12,7 @@ OutFile "install_mtxcli.exe"
 RequestExecutionLevel admin
 
 ; Build Unicode installer
-Unicode True
+; Unicode True
 
 ; The default installation directory
 InstallDir $PROGRAMFILES64\Mtxcli
