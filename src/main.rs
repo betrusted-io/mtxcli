@@ -8,16 +8,32 @@ use directories::ProjectDirs;
 
 
 #[cfg(all(unix, target_os="linux"))]
-const OS: &'static str= "Linux";
+const TARGET_OS: &'static str= "linux";
+#[cfg(all(unix, target_os="linux"))]
+const OS_LINUX: bool = true;
+#[cfg(not(all(unix, target_os="linux")))]
+const OS_LINUX: bool = false;
 
 #[cfg(windows)]
-const OS: &'static str= "Windows";
+const TARGET_OS: &'static str= "windows";
+#[cfg(windows)]
+const OS_WINDOWS: bool = true;
+#[cfg(not(windows))]
+const OS_WINDOWS: bool = false;
 
 #[cfg(all(unix, target_os="macos"))]
-const OS: &'static str= "MacOS";
+const TARGET_OS: &'static str= "macos";
+#[cfg(all(unix, target_os="macos"))]
+const OS_MACOS: bool = true;
+#[cfg(not(all(unix, target_os="macos")))]
+const OS_MACOS: bool = false;
 
 #[cfg(not(any(unix, windows)))]
-const OS: &'static str= "Unknown";
+const TARGET_OS: &'static str= "UNKNOWN";
+#[cfg(not(any(unix, windows)))]
+const OS_UNKNOWN: bool = true;
+#[cfg(any(unix, windows))]
+const OS_UNKNOWN: bool = false;
 
 /// mtxcli version
 const VERSION: &'static str= "0.2.0";
@@ -93,5 +109,9 @@ fn main() {
     }
 
     println!("Welcome to mtxcli!");
-    println!("OS: {}", OS);
+    println!("TARGET_OS.: {}", TARGET_OS);
+    println!("OS_LINUX..: {}", OS_LINUX);
+    println!("OS_WINDOWS: {}", OS_WINDOWS);
+    println!("OS_MACOS..: {}", OS_MACOS);
+    println!("OS_UNKNOWN: {}", OS_UNKNOWN);
 }
