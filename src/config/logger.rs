@@ -3,6 +3,7 @@
 //! Additional configuration can be found in `config_dir/LOGGER_TOML`
 
 use log::Record;
+use std::path::PathBuf;
 
 /// Logging information configuration file name
 const LOGGER_TOML: &str= "logger.toml";
@@ -53,9 +54,8 @@ pub fn logdemo_format(
 
 /// Initialize logging
 pub fn init(config_dir: &str, level: &str) {
-    let mut logger_toml = String::from(config_dir);
-    logger_toml.push('/');
-    logger_toml.push_str(LOGGER_TOML);
+    let mut logger_toml: PathBuf = config_dir.into();
+    logger_toml.push(LOGGER_TOML);
     flexi_logger::Logger::with_str(level)
         .format(logdemo_format_color)
         .format_for_files(logdemo_format)
@@ -63,6 +63,7 @@ pub fn init(config_dir: &str, level: &str) {
         .append()
         .log_to_file()
         .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
-        .start_with_specfile(logger_toml)
-        .unwrap();
+        .start_with_specfile(logger_toml.to_str()
+                             .expect("connot create logger_toml path"))
+        .expect("cannot initialize flexi_logger");
 }
