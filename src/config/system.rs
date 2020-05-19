@@ -40,8 +40,17 @@ const HOME: &str= "HOME";
 #[cfg(windows)]
 const HOME: &str= "USERPROFILE";
 
+/// End of line convention
+#[cfg(not(windows))]
+const EOL: &str= "\n";
+#[cfg(windows)]
+const EOL: &str= "\r\n";
+
 /// current working directory
 const CWD: &str= ".";
+
+/// The empty string
+const EMPTY: &str = "";
 
 /// Returns the home directory
 fn home_dir() -> String  {
@@ -91,6 +100,7 @@ pub struct System {
     pub windows: bool,
     pub macos: bool,
     pub unknown: bool,
+    pub eol: String,
 }
 
 /// System implementation
@@ -104,6 +114,15 @@ impl System {
             windows: OS_WINDOWS,
             macos: OS_MACOS,
             unknown: OS_UNKNOWN,
+            eol: EOL.to_string()
+        }
+    }
+
+    /// Returns the value of environment variable `var` or the empty string if not set
+    pub fn getenv(&self, var: &str) -> String {
+        match env::var(var) {
+            Ok(val) => val,
+            Err(_) => EMPTY.to_string()
         }
     }
 }

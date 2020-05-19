@@ -2,6 +2,8 @@
 //!
 //! Additional configuration can be found in `config_dir/LOGGER_TOML`
 
+use crate::config::Config;
+
 use log::Record;
 use std::path::PathBuf;
 
@@ -28,10 +30,11 @@ pub fn logdemo_format_color(
     let level = record.level();
     write!(
         w,
-        "{} {} [{}] {}",
+        // "{} {} [{}] {}",
+        "{} {} {}",
         style(level, now.now().format("%T%.3f")),
         style(level, record.level()),
-        record.module_path().unwrap_or("<module>"),
+        // record.module_path().unwrap_or("<module>"),
         style(level, &record.args())
     )
 }
@@ -44,10 +47,11 @@ pub fn logdemo_format(
 ) -> Result<(), std::io::Error> {
     write!(
         w,
-        "{} {} [{}] {}",
+        // "{} {} [{}] {}",
+        "{} {} {}",
         now.now().format("%T%.3f"),
         record.level(),
-        record.module_path().unwrap_or("<module>"),
+        // record.module_path().unwrap_or("<module>"),
         &record.args()
     )
 }
@@ -66,4 +70,20 @@ pub fn init(config_dir: &str, level: &str) {
         .start_with_specfile(logger_toml.to_str()
                              .expect("connot create logger_toml path"))
         .expect("cannot initialize flexi_logger");
+}
+
+/// Demonstrates the various logging levels
+pub fn act(config: &Config) -> i32 {
+    println!("Welcome to {}!", config.app);
+    println!("example error:");
+    error!("example error");
+    println!("example warn:");
+    warn!("example warn");
+    println!("example info:");
+    info!("example info");
+    println!("example debug:");
+    debug!("example debug");
+    println!("example trace:");
+    trace!("example trace");
+    0
 }
