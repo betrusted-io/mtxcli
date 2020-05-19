@@ -110,8 +110,7 @@ impl<'a> Config<'a> {
         self.assign_json(k, json!(v));
     }
 
-    pub fn set_jsons(&mut self, ks: &Vec<&str>, vs: &Vec<&Json>) {
-        assert_eq!(ks.len(), vs.len());
+    pub fn set_jsons(&mut self, m: &Map<String,Json>) {
         let config_filename = self.get("config");
         println!("SET reading from: {}", config_filename);
         let mut config_str = String::new();
@@ -123,56 +122,48 @@ impl<'a> Config<'a> {
                 // Err(e) => println!("could not open {}: {:?}", config_filename, e)
                 Err(_) => ()
             }
-        // FIXME
         if config_str.len() == 0 {
             config_str.push_str("{}");
         }
-        if config_str.len() > 0 {
-            // println!("config_str: {}", config_str);
-            let mut mutations = 0;
-            let mut config_json: Json = serde_json::from_str(&config_str).unwrap();
-            if config_json.is_object() {
-                print_json("read from file", &config_json);
-                let config_map = config_json.as_object_mut().unwrap();
-                for i in 0..ks.len() {
-                    let k = ks[i];
-                    let v = vs[i];
-                    self.assign_json(k, v.clone());
-                    match config_map.get_mut(k) {
-                        Some(e) => if *e != *v {
-                            *e = v.clone();
-                            mutations += 1;
-                        },
-                        None => {
-                            config_map.insert(k.to_string(), v.clone());
-                            mutations += 1;
-                            ()
-                        }
+        let mut mutations = 0;
+        let mut config_json: Json = serde_json::from_str(&config_str).unwrap();
+        if config_json.is_object() {
+            print_json("read from file", &config_json);
+            let config_map = config_json.as_object_mut().unwrap();
+            for (k, v) in m {
+                 self.assign_json(k, v.clone());
+                match config_map.get_mut(k) {
+                    Some(e) => if e != v {
+                        *e = v.clone();
+                        mutations += 1;
+                    },
+                    None => {
+                        config_map.insert(k.to_string(), v.clone());
+                        mutations += 1;
                     }
                 }
-                println!("mutations: {}", mutations);
-                if mutations > 0 {
+            }
+            println!("mutations: {}", mutations);
+            if mutations > 0 {
 
-                    let mut new_str = serde_json::to_string_pretty(&config_json).unwrap();
-                    new_str.push('\n'); // UNIXism
-                    println!("new_str: {}", new_str);
-                    let mut config_file = OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(config_filename)
-                        .expect("unable to open config file");
-                    config_file.write_all(new_str.as_bytes())
-                        .expect("unable to write");
-                }
-            } else {
-                println!("NOT HANDLED, not json object");
+                let mut new_str = serde_json::to_string_pretty(&config_json).unwrap();
+                new_str.push('\n'); // UNIXism
+                println!("new_str: {}", new_str);
+                let mut config_file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(config_filename)
+                    .expect("unable to open config file");
+                config_file.write_all(new_str.as_bytes())
+                    .expect("unable to write");
             }
         } else {
-            println!("NOT HANDLED, open failure or empty/no file");
+            println!("NOT HANDLED, not json object");
         }
     }
 
+    /*
     pub fn sets(&mut self, ks: &Vec<String>, vs: &Vec<String>) {
         assert_eq!(ks.len(), vs.len());
         let mut rks: Vec<&str> = Vec::new();
@@ -185,7 +176,9 @@ impl<'a> Config<'a> {
         }
         self.set_jsons(&rks, &rjs);
     }
+     */
 
+        /*
     pub fn set_json(&mut self, k: &str, v: &Json) {
         let mut ks: Vec<&str> = Vec::new();
         ks.push(k);
@@ -198,6 +191,7 @@ impl<'a> Config<'a> {
         let j = json!(v);
         self.set_json(k, &j);
     }
+     */
 
     /// get var
     pub fn get(&mut self, k: &str) -> String {
@@ -277,23 +271,19 @@ impl<'a> Config<'a> {
 
         }
         if let Some(sets) = matches.values_of("set") {
-            // FIXME: mutate ALL in a batch
-            let mut ks: Vec<String> = Vec::new();
-            let mut vs: Vec<String> = Vec::new();
+            let mut m: Map<String,Json> = Map::new();
             for s in sets {
                 match keqv.captures(s) {
                     Some(cap) => {
                         println!("set: {} = {}", &cap[1], &cap[2]);
-                        // self.set(&cap[1], &cap[2]);
-                        ks.push(cap[1].to_string());
-                        vs.push(cap[2].to_string());
+                        m.insert(cap[1].to_string(), json!(cap[2]));
                     },
                     None => {
                         println!("set malformed: {}", s);
                     }
                 }
             }
-            self.sets(&ks, &vs);
+            self.set_jsons(&m);
         }
         if let Some(assigns) = matches.values_of("assign") {
             for a in assigns {
