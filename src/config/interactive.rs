@@ -2,11 +2,8 @@
 //!
 //! Enters interactive mode
 
-use lazy_static::lazy_static;
 use std::error::Error;
 use std::io::Write;
-use std::process;
-use std::sync::Mutex;
 // use tokio::io::{AsyncReadExt, AsyncWriteExt };
 use tokio::io::AsyncReadExt;
 use tokio::io;
@@ -16,6 +13,12 @@ use regex::Regex;
 use crate::config::show;
 use crate::config::url;
 
+#[cfg(not(windows))]
+use std::sync::Mutex;
+#[cfg(not(windows))]
+use std::process;
+#[cfg(not(windows))]
+use lazy_static::lazy_static;
 #[cfg(not(windows))]
 use std::os::unix::io::RawFd;
 #[cfg(not(windows))]
@@ -37,9 +40,11 @@ const DEL: u8 = 127;
 const ETX: u8 = 3;
 /// Buffer size constant
 const MAX_BYTES: usize = 128;
-#[cfg(not(windows))]
 /// File descriptor for `STDIN`
+#[cfg(not(windows))]
 const STDIN_FD: RawFd = 0;
+#[cfg(windows)]
+const STDIN_FD: u32 = 0;
 
 #[cfg(not(windows))]
 lazy_static! {
@@ -58,6 +63,7 @@ lazy_static! {
 ///   * If this signal handler is called while the PREVIOUS_TERMIOS is unlocked.
 ///     This cannot happen, as this handler is installed after the
 ///     PREVIOUS_TERMIOS, at which point it will not be updated again.
+#[cfg(not(windows))]
 extern "C" fn restore_terminal(signal: libc::c_int) {
     if let Some(previous_termio) = PREVIOUS_TERMIOS.lock().unwrap().take() {
         println!("Restoring previous TERMIOS...");
@@ -71,8 +77,12 @@ extern "C" fn restore_terminal(signal: libc::c_int) {
         process::exit(signal);
     }
 }
+#[cfg(windows)]
+fn restore_terminal(_signal: u32) {
+}
 
 /// Will convert the TTY to 'raw' mode and save the original mode to `PREVIOUS_TERMIOS`
+#[cfg(not(windows))]
 fn stdin_raw_mode() {
     println!("set raw terminal mode");
     let original_mode = termios::tcgetattr(STDIN_FD)
@@ -109,10 +119,14 @@ fn stdin_raw_mode() {
             .expect("Couldn't set signal handler for SIGTERM");
     }
 }
+#[cfg(windows)]
+fn stdin_raw_mode() {
+}
 
 /// Returns true if `fd` is a TTY
 ///
 /// Will assume false if unable to query the file descriptor
+#[cfg(not(windows))]
 fn is_a_tty(fd: RawFd) -> bool {
     let ttyp = match unistd::isatty(fd) {
         Ok(ttyp) => ttyp,
@@ -122,6 +136,10 @@ fn is_a_tty(fd: RawFd) -> bool {
         }
     };
     ttyp
+}
+#[cfg(windows)]
+fn is_a_tty(_fd: u32) -> bool {
+    false
 }
 
 /*
