@@ -30,11 +30,11 @@ pub fn logdemo_format_color(
     let level = record.level();
     write!(
         w,
-        // "{} {} [{}] {}",
-        "{} {} {}",
+        "{} {} [{}] {}",
+        // "{} {} {}",
         style(level, now.now().format("%T%.3f")),
         style(level, record.level()),
-        // record.module_path().unwrap_or("<module>"),
+        record.module_path().unwrap_or("<module>"),
         style(level, &record.args())
     )
 }
@@ -47,11 +47,11 @@ pub fn logdemo_format(
 ) -> Result<(), std::io::Error> {
     write!(
         w,
-        // "{} {} [{}] {}",
-        "{} {} {}",
+        "{} {} [{}] {}",
+        // "{} {} {}",
         now.now().format("%T%.3f"),
         record.level(),
-        // record.module_path().unwrap_or("<module>"),
+        record.module_path().unwrap_or("<module>"),
         &record.args()
     )
 }
@@ -66,7 +66,7 @@ pub fn init(config_dir: &str, level: &str) {
         .suppress_timestamp()
         .append()
         .log_to_file()
-        .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
+        .duplicate_to_stderr(flexi_logger::Duplicate::Info)
         .start_with_specfile(logger_toml.to_str()
                              .expect("connot create logger_toml path"))
         .expect("cannot initialize flexi_logger");

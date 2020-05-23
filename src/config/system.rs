@@ -2,62 +2,128 @@
 //!
 //! Includes configuration directory
 
-use std::env;
-use std::fmt;
-use std::path::PathBuf;
+use std::convert::From;
+use std::{env,fmt,io};
+use std::fs::{File,OpenOptions};
+use std::io::prelude::*;
+use std::path::{Path,PathBuf};
 
 #[cfg(all(unix, target_os="linux"))]
+/// Target operating system name
 const TARGET_OS: &str= "linux";
 #[cfg(all(unix, target_os="linux"))]
+/// Operating system is Linux?
 const OS_LINUX: bool = true;
 #[cfg(not(all(unix, target_os="linux")))]
+/// Operating system is Linux?
 const OS_LINUX: bool = false;
 
 #[cfg(windows)]
+/// Target operating system name
 const TARGET_OS: &str= "windows";
 #[cfg(windows)]
+/// Operating system is Windows?
 const OS_WINDOWS: bool = true;
 #[cfg(not(windows))]
+/// Operating system is Windows?
 const OS_WINDOWS: bool = false;
 
 #[cfg(all(unix, target_os="macos"))]
+/// Target operating system name
 const TARGET_OS: &str= "macos";
 #[cfg(all(unix, target_os="macos"))]
+/// Operating system is Mac OS?
 const OS_MACOS: bool = true;
 #[cfg(not(all(unix, target_os="macos")))]
+/// Operating system is Mac OS?
 const OS_MACOS: bool = false;
 
 #[cfg(not(any(unix, windows)))]
+/// Target operating system name
 const TARGET_OS: &str= "UNKNOWN";
 #[cfg(not(any(unix, windows)))]
+/// Operating system is Unknown?
 const OS_UNKNOWN: bool = true;
 #[cfg(any(unix, windows))]
+/// Operating system is Unknown?
 const OS_UNKNOWN: bool = false;
 
-/// Home directory
+/// Home directory env var
 #[cfg(not(windows))]
 const HOME: &str= "HOME";
 #[cfg(windows)]
 const HOME: &str= "USERPROFILE";
 
+/// End of line convention for UNIX
+const EOL_UNIX: &str= "\n";
+/// End of line convention for Windows
+const EOL_WINDOWS: &str= "\r\n";
+
 /// End of line convention
 #[cfg(not(windows))]
-const EOL: &str= "\n";
+const EOL: &str= EOL_UNIX;
 #[cfg(windows)]
-const EOL: &str= "\r\n";
+const EOL: &str= EOL_WINDOWS;
 
-/// current working directory
+/// Current working directory
 const CWD: &str= ".";
 
 /// The empty string
-const EMPTY: &str = "";
+pub const EMPTY: &str = "";
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+/// Other file ownership mask (octal, UNIX only)
+const OTHER_FILE_RW: u32 = 0o177;
+#[cfg(unix)]
+/// Other directory ownership mask (octal, UNIX only)
+const OTHER_DIR_RW: u32 = 0o077;
+
+#[cfg(not(unix))]
+fn owner_rw(_: File) {
+}
+
+#[cfg(not(unix))]
+fn path_owner_rw<P: AsRef<Path>>(path: P) {
+}
+
+#[cfg(unix)]
+/// Sets the file permissions to read and write for the owner (only)
+fn owner_rw(file: File) {
+    let metadata = file.metadata()
+        .expect("unable to get file permissions");
+    let file_type = metadata.file_type();
+    let other = if file_type.is_dir() { OTHER_DIR_RW } else { OTHER_FILE_RW };
+    let mut perms = metadata.permissions();
+    let mut mode = perms.mode();
+    if mode & other != 0 {
+        mode &= !other;
+        perms.set_mode(mode);
+        file.set_permissions(perms)
+            .expect("unable to set permissions");
+    }
+}
+
+#[cfg(unix)]
+/// Sets the path permissions to read and write for the owner (only)
+fn path_owner_rw<P: AsRef<Path>>(path: P) {
+    let file = match OpenOptions::new().read(true).open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            println!("could not open path: {:}", e);
+            return;
+        }
+    };
+    owner_rw(file);
+}
 
 /// Returns the home directory
 fn home_dir() -> String  {
     match env::var(HOME) {
         Ok(val) => val,
         Err(e) => {
-            println!("couldn't interpret variable name \"{}\": {}", HOME, e);
+            warn!("couldn't interpret variable name \"{}\": {}", HOME, e);
             CWD.into()
         }
     }
@@ -105,6 +171,8 @@ pub struct System {
 
 /// System implementation
 impl System {
+
+    /// Construct a new System
     pub fn new(qualifier: &'static str, organization: &'static str,
                app: &'static str) -> Self {
         System {
@@ -123,6 +191,54 @@ impl System {
         match env::var(var) {
             Ok(val) => val,
             Err(_) => EMPTY.to_string()
+        }
+    }
+
+    /// converts UNIX line endings to Windows line endtings
+    pub fn unix2dos(&self, s: &mut String) {
+        *s = s.replace(EOL_UNIX, EOL_WINDOWS);
+    }
+
+    /// Reads the file into the string (or default upon failure to read)a
+    pub fn read_file_to_str(&self, mut dst: &mut String, filename: &str, default: &str) {
+        dst.clear();
+        File::open(filename)
+            .and_then(|mut f| f.read_to_string(&mut dst))
+            .unwrap_or_else(|_| { dst.push_str(default); dst.len()});
+        println!("read_file_to_str: ={}=", dst);
+    }
+
+    /// Writes to the file from the string
+    pub fn write_file_from_str(&self, src: &str, filename: &str) -> Result<(), io::Error> {
+        let mut psrc = String::from(src);
+        if !psrc.is_empty() {
+            if let Some(ch) = psrc.get(psrc.len()-1..psrc.len()) {
+                if ch != EOL_UNIX {
+                    println!("adding newline");
+                    psrc.push_str(EOL_UNIX);
+                }
+            }
+        }
+        if self.windows {
+            println!("Windows convention");
+            self.unix2dos(&mut psrc);
+        }
+        println!("write_file_from_str: ={}=", psrc);
+        let mut path: PathBuf = filename.into();
+        if path.pop() {
+            println!("parent: {:?}", path);
+            mkdirp::mkdirp(&path)
+                .expect("unable to make config file directory");
+            path_owner_rw(&path);
+        }
+        let config_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(filename);
+        match config_file {
+            Ok(mut f) => f.write_all(psrc.as_bytes()).and_then(|_| Ok(owner_rw(f))),
+            Err(e) => Err(e)
         }
     }
 }
