@@ -9,11 +9,13 @@ use serde_json::{Value as Json, Map, json};
 use std::fmt;
 use std::path::PathBuf;
 
+mod interactive;
+mod logger;
+mod parking;
+mod show;
 mod system;
 use system::System;
-mod logger;
-mod show;
-mod parking;
+mod url;
 
 /// The configuration filename
 const CONFIG_FILE: &str = "config.json";
@@ -102,6 +104,49 @@ impl<'a> Config<'a> {
         }
     }
 
+    /// Evaluates exp
+    fn eval(&self, exp: &str) -> String {
+        let mut value = String::new();
+        let mut i;
+        let mut j = 0;
+        let re = Regex::new(r"(^|[^\\])(\$\[[A-Z0-9_]+\])") // TODO: cache this
+            .expect("unable to compile env regex");
+        for mat in re.find_iter(exp) {
+            i = mat.start();
+            if i > 0 || &exp[1..2] != "[" {
+                i += 1;
+            } // skip non backslash
+            if i > j {
+                value.push_str(&exp[j..i]);
+            }
+            j = mat.end();
+            value.push_str(&self.system.getenv(&exp[i+2..j-1]));
+        }
+        if j < exp.len() {
+            value.push_str(&exp[j..]);
+        }
+        let exp2 = &value.to_string();
+        value.truncate(0);
+        j = 0;
+        let re2 = Regex::new(r"(^|[^\\])(\$\{[A-Za-z0-9_-]+\})") // TODO: cache this
+            .expect("unable to compile variable regex");
+        for mat2 in re2.find_iter(exp2) {
+            i = mat2.start();
+            if i > 0 || &exp2[1..2] != "{" {
+                i += 1;
+            }
+            if i > j {
+                value.push_str(&exp2[j..i]);
+            }
+            j = mat2.end();
+            value.push_str(&self.get(&exp2[i+2..j-1]))
+        }
+        if j < exp2.len() {
+            value.push_str(&exp2[j..]);
+        }
+        value
+    }
+
     /// Assign the configuration key **k** the Json value **v**
     pub fn assign_json(&mut self, k: &str, v: Json) {
         match self.config.get_mut(k) {
@@ -118,12 +163,11 @@ impl<'a> Config<'a> {
     /// Read the config file from the filesystem
     fn read_config (&mut self) {
         let config_filename = self.get(CONFIG_FILE_KEY);
-        println!("read_config from: {}", config_filename);
         let mut config_str = String::new();
         self.system.read_file_to_str(&mut config_str, &config_filename, EMPTY_OBJECT);
         let mut config_json: Json = serde_json::from_str(&config_str).unwrap();
         if config_json.is_object() {
-            print_json("read from file", &config_json);
+            // print_json("read from file", &config_json);
             let config_map = config_json.as_object_mut().unwrap();
             for (k, v) in config_map {
                 self.assign_json(k, v.clone());
@@ -136,13 +180,12 @@ impl<'a> Config<'a> {
     /// Set multiple Json values
     pub fn set_jsons(&mut self, m: &Map<String,Json>) {
         let config_filename = self.get(CONFIG_FILE_KEY);
-        println!("read_config from: {}", config_filename);
         let mut config_str = String::new();
         self.system.read_file_to_str(&mut config_str, &config_filename, EMPTY_OBJECT);
         let mut mutations = 0;
         let mut config_json: Json = serde_json::from_str(&config_str).unwrap();
         if config_json.is_object() {
-            print_json("read from file", &config_json);
+            // print_json("read from file", &config_json);
             let config_map = config_json.as_object_mut().unwrap();
             for (k, v) in m {
                 self.assign_json(k, v.clone());
@@ -157,7 +200,6 @@ impl<'a> Config<'a> {
                     }
                 }
             }
-            println!("mutations: {}", mutations);
             if mutations > 0 {
                 let str = serde_json::to_string_pretty(&config_json)
                     .expect("unable to serialize config");
@@ -169,20 +211,43 @@ impl<'a> Config<'a> {
         }
     }
 
-    /*
-    pub fn set_json(&mut self, k: &str, v: &Json) {
-        let mut ks: Vec<&str> = Vec::new();
-        ks.push(k);
-        let mut vs: Vec<&Json> = Vec::new();
-        vs.push(v);
-        self.set_jsons(&ks, &vs);
+    /// Unset a key
+    pub fn unset(&mut self, k: &str) {
+        let config_filename = self.get(CONFIG_FILE_KEY);
+        let mut config_str = String::new();
+        self.system.read_file_to_str(&mut config_str, &config_filename, EMPTY_OBJECT);
+        let mut mutations = 0;
+        let mut config_json: Json = serde_json::from_str(&config_str).unwrap();
+        if config_json.is_object() {
+            // print_json("read from file", &config_json);
+            let config_map = config_json.as_object_mut().unwrap();
+            if config_map.contains_key(k) {
+                config_map.remove(k);
+                mutations += 1;
+            }
+            if self.config.contains_key(k) {
+                self.config.remove(k);
+            }
+            if mutations > 0 {
+                let str = serde_json::to_string_pretty(&config_json)
+                    .expect("unable to serialize config");
+                self.system.write_file_from_str(&str, &config_filename)
+                    .expect("unable to write config file");
+            }
+        } else {
+            error!("configurion file is not a json object");
+        }
+    }
+
+    pub fn set_json(&mut self, k: &str, v: Json) {
+        let mut m: Map<String,Json> = Map::new();
+        m.insert(k.to_string(), v);
+        self.set_jsons(&m);
     }
 
     pub fn set(&mut self, k: &str, v: &str) {
-        let j = json!(v);
-        self.set_json(k, &j);
+        self.set_json(k, json!(v));
     }
-     */
 
     /// Get a config value (with optional default, if not present)
     pub fn get_default(&self, k: &str, default: &str) -> String {
@@ -200,6 +265,11 @@ impl<'a> Config<'a> {
     /// Get a config value (return the empty string if not present)
     pub fn get(&self, k: &str) -> String {
         self.get_default(k, system::EMPTY)
+    }
+
+    /// Get a config value returns true if set
+    pub fn is(&self, k: &str) -> bool {
+        &self.get(k) == "true"
     }
 
     /// Parse command line arguments
@@ -242,6 +312,30 @@ impl<'a> Config<'a> {
                  .takes_value(true)
                  .multiple(true)
                  .number_of_values(1))
+            .arg(Arg::with_name("unset")
+                 .short("u")
+                 .long("unset")
+                 .value_name("var")
+                 .help("unsets var's value")
+                 .takes_value(true)
+                 .multiple(true)
+                 .number_of_values(1))
+            .arg(Arg::with_name("encode")
+                 .short("e")
+                 .long("encode")
+                 .value_name("value")
+                 .help("URL encodes value")
+                 .takes_value(true)
+                 .multiple(true)
+                 .number_of_values(1))
+            .arg(Arg::with_name("decode")
+                 .short("d")
+                 .long("decode")
+                 .value_name("value")
+                 .help("URL decodes value")
+                 .takes_value(true)
+                 .multiple(true)
+                 .number_of_values(1))
             .arg(Arg::with_name("parking-lot")
                  .short("P")
                  .long("parking-lot")
@@ -260,11 +354,12 @@ impl<'a> Config<'a> {
             for s in sets {
                 match keqv.captures(s) {
                     Some(cap) => {
-                        debug!("set: {} = {}", &cap[1], &cap[2]);
-                        m.insert(cap[1].to_string(), json!(cap[2]));
+                        // println!("set: {} = {}", &cap[1], &cap[2]);
+                        // m.insert(cap[1].to_string(), json!(cap[2]));
+                        m.insert(self.eval(&cap[1]), json!(self.eval(&cap[2])));
                     },
                     None => {
-                        error!("set malformed: {}", s);
+                        println!("set malformed: {}", s);
                     }
                 }
             }
@@ -274,8 +369,9 @@ impl<'a> Config<'a> {
             for a in assigns {
                 match keqv.captures(a) {
                     Some(cap) => {
-                        debug!("assign: {} = {}", &cap[1], &cap[2]);
-                        self.assign(&cap[1], &cap[2]);
+                        // println!("assign: {} = {}", &cap[1], &cap[2]);
+                        // self.assign(&cap[1], &cap[2]);
+                        self.assign(&self.eval(&cap[1]), &self.eval(&cap[2]));
                     },
                     None => {
                         error!("assign malformed: {}", a);
@@ -283,9 +379,25 @@ impl<'a> Config<'a> {
                 }
             }
         }
+        if let Some(unsets) = matches.values_of("unset") {
+            for u in unsets {
+                self.unset(&self.eval(u));
+            }
+        }
         if let Some(gets) = matches.values_of("get") {
             for g in gets {
-                println!("{} = {}", g, self.get(g));
+                let k = self.eval(g);
+                println!("{} = {}", k, self.get(&k));
+            }
+        }
+        if let Some(encodes) = matches.values_of("encode") {
+            for e in encodes {
+                println!("encode: {} = {}", e, url::encode(e));
+            }
+        }
+        if let Some(decodes) = matches.values_of("decode") {
+            for d in decodes {
+                println!("decode: {} = {}", d, url::decode(d));
             }
         }
         logger::init(&self.system.config_dir, &self.get(LEVEL_KEY));
@@ -308,7 +420,7 @@ impl<'a> Config<'a> {
             Action::ShowConfig => show::act(self),
             Action::LoggingDemo => logger::act(self),
             Action::ParkingLot => parking::act(self),
-            _ =>  0
+            _ =>  interactive::act(self)
         }
     }
 }

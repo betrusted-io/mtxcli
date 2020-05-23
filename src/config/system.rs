@@ -85,7 +85,7 @@ fn owner_rw(_: File) {
 }
 
 #[cfg(not(unix))]
-fn path_owner_rw<P: AsRef<Path>>(path: P) {
+fn path_owner_rw<P: AsRef<Path>>(_path: P) {
 }
 
 #[cfg(unix)]
@@ -111,7 +111,7 @@ fn path_owner_rw<P: AsRef<Path>>(path: P) {
     let file = match OpenOptions::new().read(true).open(path) {
         Ok(f) => f,
         Err(e) => {
-            println!("could not open path: {:}", e);
+            error!("could not open path: {:}", e);
             return;
         }
     };
@@ -123,7 +123,7 @@ fn home_dir() -> String  {
     match env::var(HOME) {
         Ok(val) => val,
         Err(e) => {
-            warn!("couldn't interpret variable name \"{}\": {}", HOME, e);
+            error!("couldn't interpret variable name \"{}\": {}", HOME, e);
             CWD.into()
         }
     }
@@ -205,7 +205,6 @@ impl System {
         File::open(filename)
             .and_then(|mut f| f.read_to_string(&mut dst))
             .unwrap_or_else(|_| { dst.push_str(default); dst.len()});
-        println!("read_file_to_str: ={}=", dst);
     }
 
     /// Writes to the file from the string
@@ -214,19 +213,15 @@ impl System {
         if !psrc.is_empty() {
             if let Some(ch) = psrc.get(psrc.len()-1..psrc.len()) {
                 if ch != EOL_UNIX {
-                    println!("adding newline");
                     psrc.push_str(EOL_UNIX);
                 }
             }
         }
         if self.windows {
-            println!("Windows convention");
             self.unix2dos(&mut psrc);
         }
-        println!("write_file_from_str: ={}=", psrc);
         let mut path: PathBuf = filename.into();
         if path.pop() {
-            println!("parent: {:?}", path);
             mkdirp::mkdirp(&path)
                 .expect("unable to make config file directory");
             path_owner_rw(&path);
