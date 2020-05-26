@@ -16,6 +16,7 @@ mod show;
 mod system;
 use system::System;
 mod url;
+mod datetime;
 
 /// The configuration filename
 const CONFIG_FILE: &str = "config.json";
@@ -249,6 +250,10 @@ impl<'a> Config<'a> {
         self.set_json(k, json!(v));
     }
 
+    pub fn set_integer(&mut self, k: &str, v: i64) {
+        self.set_json(k, json!(v));
+    }
+
     /// Get a config value (with optional default, if not present)
     pub fn get_default(&self, k: &str, default: &str) -> String {
         if let Some(e) = self.config.get(k) {
@@ -260,6 +265,25 @@ impl<'a> Config<'a> {
             }
         }
         default.to_string()
+    }
+
+    /// Get a config value (with optional integer default, if not present)
+    pub fn get_default_int(&self, k: &str, default: i64) -> i64 {
+        if let Some(e) = self.config.get(k) {
+            if e.is_i64() {
+                return e.as_i64().unwrap();
+            }
+            if e.is_string() {
+                if let Ok(v) = e.as_str().unwrap().parse::<i64>() {
+                    return v;
+                } else {
+                    debug!("{} could not be converted to an integer", k);
+                }
+            } else {
+                debug!("{} is not an integer, it's a {}", k, json_type_str(e));
+            }
+        }
+        default
     }
 
     /// Get a config value (return the empty string if not present)

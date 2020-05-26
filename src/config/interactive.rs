@@ -2,6 +2,7 @@
 //!
 //! Enters interactive mode
 
+use std::convert::TryInto;
 use std::error::Error;
 use std::io::Write;
 // use tokio::io::{AsyncReadExt, AsyncWriteExt };
@@ -9,9 +10,11 @@ use tokio::io::AsyncReadExt;
 use tokio::io;
 // use tokio::net::TcpStream;
 use regex::Regex;
+use tokio::time::{self, Duration,Instant};
 
 use crate::config::show;
 use crate::config::url;
+use crate::config::datetime;
 
 #[cfg(not(windows))]
 use std::sync::Mutex;
@@ -29,6 +32,11 @@ use nix::sys::termios::{self, SetArg, InputFlags, ControlFlags, LocalFlags};
 use nix::unistd;
 
 use crate::config::Config;
+
+/// The key for the clock delay
+const CLOCK_KEY: &str = "clock_delay";
+/// Maximum delay
+const CLOCK_MAX: i64 = 1_000_000_000;
 
 /// Tab
 const HT: u8 = 9;
@@ -66,12 +74,12 @@ lazy_static! {
 #[cfg(not(windows))]
 extern "C" fn restore_terminal(signal: libc::c_int) {
     if let Some(previous_termio) = PREVIOUS_TERMIOS.lock().unwrap().take() {
-        println!("Restoring previous TERMIOS...");
+        // println!("Restoring previous TERMIOS...");
         termios::tcsetattr(STDIN_FD, termios::SetArg::TCSANOW, &previous_termio)
             .expect("couldn't restore old flags");
-    } else {
+    }/* else {
         println!("No previous TERMIOS to restore");
-    }
+    }*/
     if signal > 0 {
         println!("terminating (from signal {})", signal);
         process::exit(signal);
@@ -84,7 +92,7 @@ fn restore_terminal(_signal: u32) {
 /// Will convert the TTY to 'raw' mode and save the original mode to `PREVIOUS_TERMIOS`
 #[cfg(not(windows))]
 fn stdin_raw_mode() {
-    println!("set raw terminal mode");
+    // println!("set raw terminal mode");
     let original_mode = termios::tcgetattr(STDIN_FD)
         .expect("Couldn't get original terminal mode");
     let mut raw_mode = original_mode.clone();
@@ -159,14 +167,40 @@ fn print_flush(s: &str) {
     std::io::stdout().flush().expect("Could not flush stdout");
 }
 
+
+fn output_msg(config: &Config, msg: &str) {
+    let mut out = String::new();
+    out.push_str(msg);
+    out.push_str(&config.system.eol);
+    std::io::stdout().write(out.as_bytes())
+        .expect("could not write to stdout");
+    std::io::stdout().flush()
+        .expect("could not flush stdout");
+}
+
+fn output(config: &Config, msg: &str, prompt: &str, line: &str) {
+    let mut out = String::new();
+    out.push_str(&config.system.eol);
+    out.push_str(msg);
+    out.push_str(&config.system.eol);
+    out.push_str(prompt);
+    out.push_str(line);
+    std::io::stdout().write(out.as_bytes())
+        .expect("could not write to stdout");
+    std::io::stdout().flush()
+        .expect("could not flush stdout");
+}
+
 /// prints help
 fn help(_args: &str) {
     println!("-- mtxcli commands --");
     println!("/assign var=value -- assign variable (transient) ");
+    println!("/clock -- show the world time");
     println!("/decode value -- URL decode value");
     println!("/encode value -- URL encode value");
     println!("/get var -- get variable");
     println!("/help -- prints this help message");
+    println!("/login_types -- shows supported login types for ${{server}}");
     println!("/quit -- quit's mtxcli");
     println!("/set var=value -- set variable (saved)");
     println!("/show_config -- show configuration");
@@ -203,8 +237,32 @@ fn unset(config: &mut Config, args: &str) {
     config.unset(&config.eval(args));
 }
 
-/// Interprets line, returns true to quit
-fn interpret(config: &mut Config, line: &str) -> bool {
+/// get login_types
+fn login_types(_config: &mut Config) {
+    println!("get login_types");
+}
+
+/// unset var
+fn clock(config: &mut Config, args: &str) {
+    if args.is_empty() {
+        output_msg(config, &datetime::now_world());
+    } else {
+        let delay_ms: i64 = if args == "off" {
+            CLOCK_MAX
+        } else {
+            if let Ok(d) = args.parse::<i64>() {
+                d
+            } else {
+                output_msg(config, "invalid argument, /clock {off|millis}");
+                CLOCK_MAX
+            }
+        };
+        config.set_integer(CLOCK_KEY, delay_ms);
+    }
+}
+
+/// Interprets line, returns command
+fn interpret(config: &mut Config, line: &str) -> String {
     let re = Regex::new(r"/([a-z_\?]+)\s*(.*)?$") // TODO: cache this
         .expect("unable to compile interpret regex");
     if let Some(cap) = re.captures(line) {
@@ -213,20 +271,23 @@ fn interpret(config: &mut Config, line: &str) -> bool {
         match command {
             "?" => help(args),
             "assign" => assign(config, args),
+            "clock" => clock(config, args),
             "decode" => println!("{}", url::decode(args)),
             "encode" => println!("{}", url::encode(args)),
             "get" => get(config, args),
             "help" => help(args),
-            "quit" => return true,
+            "login_types" => login_types(config),
+            "quit" => (),
             "set" => set(config, args),
             "show_config" => {show::act(config); ()},
             "unset" => unset(config, args),
             _ => println!("invalid command: {}", command)
         }
+        return command.to_string();
     } else {
         println!("invalid command: {}", line);
     }
-    false
+    return "".to_string();
 }
 
 #[allow(unreachable_code)]
@@ -234,41 +295,31 @@ fn interpret(config: &mut Config, line: &str) -> bool {
 /// The main **chatcli** program
 async fn interactive(config: &mut Config, _ttyp: bool) -> Result<(), Box<dyn Error>> {
     let name = "anonymous";
-    let prompt = "[mtxcli] ";
+    let mut prompt = String::new();
+    prompt.push('[');
+    prompt.push_str(config.app);
+    prompt.push(']');
+    prompt.push(' ');
     let mut sin = io::stdin();
     let mut inbuf = Box::new([0; MAX_BYTES]);
     let mut line: String = "".to_string();
-    print_flush(prompt);
+    let delay_ms: i64 = 5000;
+    let delay_initial: u64 = config.get_default_int(CLOCK_KEY, delay_ms).try_into().unwrap();
+    let mut delay = time::delay_for(Duration::from_millis(delay_initial));
+    let mut command = String::new();
+    let mut quit = false;
+
+    print_flush(&prompt);
     loop {
         tokio::select! {
-            /*
-            netbytes = s_read.read(&mut netbuf[..]) => {
-                let n = netbytes?;
-                if n == 0 {
-                    println!(" EOF"); break;
-                } else {
-                    received(n, &*netbuf);
-                    if (*netbuf).starts_with(b"Please enter your username:") {
-                        debug!("_connected_");
-                        println!("> {}", name);
-                        let _ = s_write.write((name.to_owned() + "\n").as_bytes()).await;
-                    }
-                    print_flush("> "); print_flush(&line);
-                }
-            }
-             */
             inbytes = sin.read(&mut inbuf[..]) => {
                 let n = inbytes?;
-                if n == 0 {
-                    println!(" EOF"); break
-                } else {
-                    let mut quit = false;
+                if n == 0 { println!(" EOF"); break }
+                else {
                     let mut i = 0;
                     while i < n {
                         let mut j = i;
-                        while j < n && inbuf[j] >= 32 && inbuf[j] != DEL {
-                            j += 1;
-                        }
+                        while j < n && inbuf[j] >= 32 && inbuf[j] != DEL { j += 1; }
                         if j > i {
                             let word = String::from_utf8((&inbuf[i..j]).to_vec())
                                 .expect("Couldn't convert typed data from UTF8");
@@ -278,37 +329,50 @@ async fn interactive(config: &mut Config, _ttyp: bool) -> Result<(), Box<dyn Err
                         if j < n {
                             match inbuf[j] {
                                 DEL => {
-                                    if !line.is_empty() { // NOTE the subtlety: multi-byte
-                                        line.pop(); // unicode chars are magically popped
-                                        print_flush("\x08 \x08");
-                                    }
+                                    if !line.is_empty() {
+                                        line.pop(); // unicode
+                                        print_flush("\x08 \x08"); }},
+                                ETX => { println!(" INT");
+                                         command.push_str("quit");
+                                         break; },
+                                HT => { let word = " ";
+                                        line.push_str(word);
+                                        print_flush(word); },
+                                LF => { println!();
+                                        if line.starts_with('/') {
+                                            command.push_str(&interpret(config, &line));
+                                            match command.as_ref() {
+                                                "quit" => {
+                                                    quit = true;
+                                                    break;
+                                                },
+                                                "clock" => {
+                                                    // output_msg(&config, "CLOCK")
+                                                    delay.reset(Instant::now());
+                                                },
+                                                _ => ()
+                                            }
+                                            command.clear();
+                                        } else {
+                                            println!("<{}> {}", name, line);
+                                        }
+                                        print_flush(&prompt);
+                                        line = "".to_string();
                                 },
-                                ETX => { println!(" INT"); quit = true; break;},
-                                HT => {
-                                    let word = " ";
-                                    line.push_str(word);
-                                    print_flush(word);
-                                },
-                                LF => {
-                                    println!();
-                                    if line.starts_with('/') {
-                                        quit = interpret(config, &line);
-                                    } else {
-                                        // if ttyp {
-                                        println!("<{}> {}", name, line);
-                                        // }
-                                    }
-                                    if !quit { print_flush(prompt); }
-                                    line = "".to_string();
-                                }
                                 _ => {} // ignore other CTRL chars
-                            }
+                            } // match
                         }
                         i = j + 1;
-                    }
-                    if quit { break; }
+                    } // while
+                    if quit { break };
                 }
-            }
+            },
+            _ = &mut delay => {
+                output(config, &datetime::now_world(), &prompt, &line);
+                let d: u64 = config.get_default_int(CLOCK_KEY, delay_ms).try_into().unwrap();
+                delay = time::delay_for(Duration::from_millis(d));
+            },
+
         };
     }
     return Ok(());
