@@ -75,6 +75,7 @@ pub struct Config<'a> {
     pub organization: &'static str,
     pub app: &'static str,
     pub version: &'static str,
+    pub prompt: String,
     pub system: System,
     pub action: Action,
     config: &'a mut Map<String,Json>,
@@ -94,11 +95,17 @@ impl<'a> Config<'a> {
                       Json::String(config_path.to_str().unwrap().to_string()));
         config.insert(LEVEL_KEY.to_string(), Json::String(LEVEL_DEFAULT.to_string()));
         let action = Action::Default;
+        let mut prompt = String::new();
+        prompt.push('[');
+        prompt.push_str(app);
+        prompt.push(']');
+        prompt.push(' ');
         Config {
             qualifier,
             organization,
             app,
             version,
+            prompt,
             system,
             action,
             config
@@ -438,7 +445,7 @@ impl<'a> Config<'a> {
     }
 
     /// Do the action, return the exit code
-    pub fn act(&mut self) -> i32 {
+    pub fn act(&'a mut self) -> i32 {
         trace!("action: {:?}", self.action);
         match self.action {
             Action::ShowConfig => show::act(self),

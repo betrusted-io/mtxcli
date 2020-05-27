@@ -10,7 +10,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io;
 // use tokio::net::TcpStream;
 use regex::Regex;
-use tokio::time::{self, Duration,Instant};
+use tokio::time::{self, Duration,Instant,Delay};
 
 use crate::config::show;
 use crate::config::url;
@@ -261,8 +261,19 @@ fn clock(config: &mut Config, args: &str) {
     }
 }
 
+/// Action for the program to act upon
+#[derive(Debug, PartialEq)]
+enum InputAction {
+    /// Continue processing input
+    Continue,
+    /// Quit
+    Quit,
+    /// ResetDelay
+    ResetDelay
+}
+
 /// Interprets line, returns command
-fn interpret(config: &mut Config, line: &str) -> String {
+fn interpret(config: &mut Config, line: &str) -> InputAction {
     let re = Regex::new(r"/([a-z_\?]+)\s*(.*)?$") // TODO: cache this
         .expect("unable to compile interpret regex");
     if let Some(cap) = re.captures(line) {
@@ -271,127 +282,156 @@ fn interpret(config: &mut Config, line: &str) -> String {
         match command {
             "?" => help(args),
             "assign" => assign(config, args),
-            "clock" => clock(config, args),
+            "clock" => {
+                clock(config, args);
+                return InputAction::ResetDelay;
+            },
             "decode" => println!("{}", url::decode(args)),
             "encode" => println!("{}", url::encode(args)),
             "get" => get(config, args),
             "help" => help(args),
             "login_types" => login_types(config),
-            "quit" => (),
+            "quit" => return InputAction::Quit,
             "set" => set(config, args),
             "show_config" => {show::act(config); ()},
             "unset" => unset(config, args),
             _ => println!("invalid command: {}", command)
         }
-        return command.to_string();
     } else {
         println!("invalid command: {}", line);
     }
-    return "".to_string();
+    return InputAction::Continue;
 }
 
-#[allow(unreachable_code)]
-#[tokio::main]
-/// The main **chatcli** program
-async fn interactive(config: &mut Config, _ttyp: bool) -> Result<(), Box<dyn Error>> {
-    let name = "anonymous";
-    let mut prompt = String::new();
-    prompt.push('[');
-    prompt.push_str(config.app);
-    prompt.push(']');
-    prompt.push(' ');
-    let mut sin = io::stdin();
-    let mut inbuf = Box::new([0; MAX_BYTES]);
-    let mut line: String = "".to_string();
-    let delay_ms: i64 = 5000;
-    let delay_initial: u64 = config.get_default_int(CLOCK_KEY, delay_ms).try_into().unwrap();
-    let mut delay = time::delay_for(Duration::from_millis(delay_initial));
-    let mut command = String::new();
-    let mut quit = false;
+/// Interactive struct
+#[derive(Debug)]
+pub struct Interactive<'b> {
+    config: &'b mut Config<'b>,
+    name: &'b str,
+    inbuf: Box<[u8]>,
+    line: String,
+    ttyp: bool
+}
 
-    print_flush(&prompt);
-    loop {
-        tokio::select! {
-            inbytes = sin.read(&mut inbuf[..]) => {
-                let n = inbytes?;
-                if n == 0 { println!(" EOF"); break }
-                else {
-                    let mut i = 0;
-                    while i < n {
-                        let mut j = i;
-                        while j < n && inbuf[j] >= 32 && inbuf[j] != DEL { j += 1; }
-                        if j > i {
-                            let word = String::from_utf8((&inbuf[i..j]).to_vec())
-                                .expect("Couldn't convert typed data from UTF8");
-                            line.push_str(&word);
-                            print_flush(&word);
-                        }
-                        if j < n {
-                            match inbuf[j] {
-                                DEL => {
-                                    if !line.is_empty() {
-                                        line.pop(); // unicode
-                                        print_flush("\x08 \x08"); }},
-                                ETX => { println!(" INT");
-                                         command.push_str("quit");
-                                         break; },
-                                HT => { let word = " ";
-                                        line.push_str(word);
-                                        print_flush(word); },
-                                LF => { println!();
-                                        if line.starts_with('/') {
-                                            command.push_str(&interpret(config, &line));
-                                            match command.as_ref() {
-                                                "quit" => {
-                                                    quit = true;
-                                                    break;
-                                                },
-                                                "clock" => {
-                                                    // output_msg(&config, "CLOCK")
-                                                    delay.reset(Instant::now());
-                                                },
-                                                _ => ()
-                                            }
-                                            command.clear();
-                                        } else {
-                                            println!("<{}> {}", name, line);
-                                        }
-                                        print_flush(&prompt);
-                                        line = "".to_string();
-                                },
-                                _ => {} // ignore other CTRL chars
-                            } // match
-                        }
-                        i = j + 1;
-                    } // while
-                    if quit { break };
-                }
-            },
-            _ = &mut delay => {
-                output(config, &datetime::now_world(), &prompt, &line);
-                let d: u64 = config.get_default_int(CLOCK_KEY, delay_ms).try_into().unwrap();
-                delay = time::delay_for(Duration::from_millis(d));
-            },
+/// implementation of Interactive
+impl<'b> Interactive<'b> {
 
-        };
+    /// Construct a new Interactive
+    pub fn new(config: &'b mut Config<'b>, ttyp: bool) -> Self {
+        let name = "anonymous";
+        let inbuf = Box::new([0; MAX_BYTES]);
+        let line = "".to_string();
+        Interactive {
+            config,
+            name,
+            inbuf,
+            line,
+            ttyp
+        }
     }
-    return Ok(());
+
+    fn new_delay(&self) -> Delay {
+        let delay_ms: u64 = self.config.get_default_int(CLOCK_KEY, CLOCK_MAX).try_into().unwrap();
+        time::delay_for(Duration::from_millis(delay_ms))
+    }
+
+    fn handle_delay(&self) -> Delay {
+        output(self.config, &datetime::now_world(),
+               &self.config.prompt, &self.line);
+        self.new_delay()
+    }
+
+    fn handle_input(&mut self, n: usize) -> InputAction {
+        if n == 0 {
+            println!(" EOF");
+            return InputAction::Quit;
+        } else {
+            let mut i = 0;
+            while i < n {
+                let mut j = i;
+                while j < n && self.inbuf[j] >= 32 && self.inbuf[j] != DEL {
+                    j += 1;
+                }
+                if j > i {
+                    let word = String::from_utf8((&self.inbuf[i..j]).to_vec())
+                        .expect("Couldn't convert typed data from UTF8");
+                    self.line.push_str(&word);
+                    print_flush(&word);
+                }
+                if j < n {
+                    match self.inbuf[j] {
+                        DEL => {
+                            if !self.line.is_empty() {
+                                self.line.pop(); // unicode
+                                print_flush("\x08 \x08");
+                            }
+                        },
+                        ETX => { println!(" INT");
+                                 return InputAction::Quit;
+                        },
+                        HT => { let word = " ";
+                                self.line.push_str(word);
+                                print_flush(word);
+                        },
+                        LF => { println!();
+                                let mut action = InputAction::Continue;
+                                if self.line.starts_with('/') {
+                                    action = interpret(self.config, &self.line);
+                                } else {
+                                    println!("<{}> {}", self.name, self.line);
+                                }
+                                print_flush(&self.config.prompt);
+                                self.line.clear();
+                                if action != InputAction::Continue {
+                                    return action;
+                                }
+                        },
+                        _ => {} // ignore other CTRL chars
+                    } // match
+                }
+                i = j + 1;
+            } // while
+        }
+        InputAction::Continue
+    }
+
+    #[allow(unreachable_code)]
+    #[tokio::main]
+    /// run routine
+    async fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut sin = io::stdin();
+        let mut delay = self.new_delay();
+
+        print_flush(&self.config.prompt);
+        loop {
+            tokio::select! {
+                inbytes = sin.read(&mut self.inbuf[..]) => {
+                    match self.handle_input(inbytes?) {
+                        InputAction::Quit => break,
+                        InputAction::ResetDelay => delay.reset(Instant::now()),
+                        _ => ()
+                    }
+                },
+                _ = &mut delay => delay = self.handle_delay()
+            };
+        }
+        return Ok(());
+    }
 }
 
 /// Interactive Mode
-pub fn act(config: &mut Config) -> i32  {
+pub fn act<'b>(config: &'b mut Config<'b>) -> i32  {
     println!("interactive mode");
     let ttyp = is_a_tty(STDIN_FD) && ! config.is("disable_tty");
-    // let mut stream = TcpStream::connect(CHAT_SERVER).await?;
-    // let (mut s_read, mut s_write) = stream.split();
-    // let mut netbuf = Box::new([0; MAX_BYTES]);
-
     if ttyp {
         stdin_raw_mode();
     } else {
         warn!("not a TTY, use ^D to quit");
     }
-    interactive(config, ttyp).unwrap_or_else(|e| { error!("interactive error: {:?}", e);});
+    let mut interactive = Interactive::new(config, ttyp);
+    interactive.run().unwrap_or_else(|e| {
+        error!("interactive error: {:?}", e);
+    });
     if ttyp {
         restore_terminal(0);
     }
