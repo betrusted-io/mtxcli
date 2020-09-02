@@ -48,10 +48,11 @@ const OS_UNKNOWN: bool = true;
 /// Operating system is Unknown?
 const OS_UNKNOWN: bool = false;
 
-/// Home directory env var
 #[cfg(not(windows))]
+/// Home directory env var
 const HOME: &str= "HOME";
 #[cfg(windows)]
+/// Home directory env var
 const HOME: &str= "USERPROFILE";
 
 /// End of line convention for UNIX
@@ -59,10 +60,11 @@ const EOL_UNIX: &str= "\n";
 /// End of line convention for Windows
 const EOL_WINDOWS: &str= "\r\n";
 
-/// End of line convention
 #[cfg(not(windows))]
+/// End of line convention
 const EOL: &str= EOL_UNIX;
 #[cfg(windows)]
+/// End of line convention
 const EOL: &str= EOL_WINDOWS;
 
 /// Current working directory
@@ -81,10 +83,12 @@ const OTHER_FILE_RW: u32 = 0o177;
 const OTHER_DIR_RW: u32 = 0o077;
 
 #[cfg(not(unix))]
+/// Sets the file permissions to read and write for the owner (only)
 fn owner_rw(_: File) {
 }
 
 #[cfg(not(unix))]
+/// Sets the path permissions to read and write for the owner (only)
 fn path_owner_rw<P: AsRef<Path>>(_path: P) {
 }
 
@@ -186,7 +190,7 @@ impl System {
         }
     }
 
-    /// Returns the value of environment variable `var` or the empty string if not set
+    /// Returns the value of environment variable `var` or empty string if not set
     pub fn getenv(&self, var: &str) -> String {
         match env::var(var) {
             Ok(val) => val,
@@ -232,7 +236,7 @@ impl System {
             .truncate(true)
             .open(filename);
         match config_file {
-            Ok(mut f) => f.write_all(psrc.as_bytes()).and_then(|_| Ok(owner_rw(f))),
+            Ok(mut f) => f.write_all(psrc.as_bytes()).map(|_| owner_rw(f)),
             Err(e) => Err(e)
         }
     }

@@ -14,7 +14,7 @@ const ORGANIZATION: &str = "Betrusted";
 /// application
 const APP: &str = "mtxcli";
 /// version
-const VERSION: &str= "0.3.1";
+const VERSION: &str= "0.4.0";
 
 /// The main **mtxcli** program
 fn main() {

@@ -9,14 +9,15 @@ use serde_json::{Value as Json, Map, json};
 use std::fmt;
 use std::path::PathBuf;
 
+mod datetime;
 mod interactive;
 mod logger;
+mod matrix;
 mod parking;
 mod show;
 mod system;
-use system::System;
 mod url;
-mod datetime;
+use system::System;
 
 /// The configuration filename
 const CONFIG_FILE: &str = "config.json";
@@ -75,7 +76,6 @@ pub struct Config<'a> {
     pub organization: &'static str,
     pub app: &'static str,
     pub version: &'static str,
-    pub prompt: String,
     pub system: System,
     pub action: Action,
     config: &'a mut Map<String,Json>,
@@ -95,17 +95,11 @@ impl<'a> Config<'a> {
                       Json::String(config_path.to_str().unwrap().to_string()));
         config.insert(LEVEL_KEY.to_string(), Json::String(LEVEL_DEFAULT.to_string()));
         let action = Action::Default;
-        let mut prompt = String::new();
-        prompt.push('[');
-        prompt.push_str(app);
-        prompt.push(']');
-        prompt.push(' ');
         Config {
             qualifier,
             organization,
             app,
             version,
-            prompt,
             system,
             action,
             config
@@ -113,6 +107,7 @@ impl<'a> Config<'a> {
     }
 
     /// Evaluates exp
+    #[allow(clippy::redundant_clone)]
     fn eval(&self, exp: &str) -> String {
         let mut value = String::new();
         let mut i;
@@ -156,6 +151,7 @@ impl<'a> Config<'a> {
     }
 
     /// Assign the configuration key **k** the Json value **v**
+    #[allow(clippy::unused_unit)]
     pub fn assign_json(&mut self, k: &str, v: Json) {
         match self.config.get_mut(k) {
             Some(e) => *e = v,
@@ -181,7 +177,7 @@ impl<'a> Config<'a> {
                 self.assign_json(k, v.clone());
             }
         } else {
-            error!("configurion file is not a json object");
+            error!("configuration file is not a json object");
         }
     }
 
@@ -215,7 +211,7 @@ impl<'a> Config<'a> {
                     .expect("unable to write config file");
             }
         } else {
-            error!("configurion file is not a json object");
+            error!("configuration file is not a json object");
         }
     }
 
@@ -243,20 +239,23 @@ impl<'a> Config<'a> {
                     .expect("unable to write config file");
             }
         } else {
-            error!("configurion file is not a json object");
+            error!("configuration file is not a json object");
         }
     }
 
+    /// Set a key to a JSON value
     pub fn set_json(&mut self, k: &str, v: Json) {
         let mut m: Map<String,Json> = Map::new();
         m.insert(k.to_string(), v);
         self.set_jsons(&m);
     }
 
+    /// Set a key to a String value
     pub fn set(&mut self, k: &str, v: &str) {
         self.set_json(k, json!(v));
     }
 
+    /// Set a key to an integer value
     pub fn set_integer(&mut self, k: &str, v: i64) {
         self.set_json(k, json!(v));
     }
