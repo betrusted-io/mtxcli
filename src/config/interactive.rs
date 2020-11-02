@@ -8,7 +8,7 @@ use std::io::Write;
 use tokio::io::AsyncReadExt;
 use tokio::io;
 use regex::Regex;
-use tokio::time::{self, Duration,Instant,Delay};
+use tokio::time::{self, Duration,Instant,Sleep};
 use unicode_width::UnicodeWidthStr;
 // use tokio::sync::mpsc;
 use hyper_tls::HttpsConnector;
@@ -463,13 +463,13 @@ impl<'b> Interactive<'b> {
     }
 
     /// Start a new delay timer to show the world clock
-    fn new_delay(&self) -> Delay {
+    fn new_delay(&self) -> Sleep {
         let delay_ms: u64 = self.config.get_default_int(CLOCK_KEY, CLOCK_MAX).try_into().unwrap();
-        time::delay_for(Duration::from_millis(delay_ms))
+        time::sleep(Duration::from_millis(delay_ms))
     }
 
     /// When the delay is up print the world time
-    fn handle_delay(&self) -> Delay {
+    fn handle_delay(&self) -> Sleep {
         println!();
         println!("{}", &datetime::now_world());
         self.prompt();
@@ -773,7 +773,7 @@ impl<'b> Interactive<'b> {
             Some(input) => input,
             None => return None
         };
-        // time::delay_for(Duration::from_millis(5000)).await;
+        // time::sleep(Duration::from_millis(5000)).await;
         let url = url_str.parse::<hyper::Uri>().unwrap();
         if url.scheme_str() != Some("http") {
             println!("This example only works with 'http' URLs.");
@@ -915,7 +915,7 @@ async fn request(input: Option<String>) -> Option<String> {
         Some(input) => input,
         None => return None
     };
-    // time::delay_for(Duration::from_millis(5000)).await;
+    // time::sleep(Duration::from_millis(5000)).await;
     let url = url_str.parse::<hyper::Uri>().unwrap();
     /*
     if url.scheme_str() != Some("http") {

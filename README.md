@@ -13,9 +13,6 @@ such that you can exchage messages with the Matrix network. And then, soon,
 be able to create an account and do the "emoji verification dance"
 with other users for the full experience.
 
-I love open source!
-
-
 ## Usage
 
 _Documentation coming soon..._
