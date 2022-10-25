@@ -13,6 +13,7 @@ pub fn encode(v: &str) -> String {
 }
 
 /// URL decode string
+#[allow(dead_code)]
 pub fn decode(v: &str) -> String {
     let decoded = percent_encoding::percent_decode_str(v)
         .decode_utf8()

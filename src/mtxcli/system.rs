@@ -58,6 +58,7 @@ const HOME: &str= "USERPROFILE";
 /// End of line convention for UNIX
 const EOL_UNIX: &str= "\n";
 /// End of line convention for Windows
+#[allow(dead_code)]
 const EOL_WINDOWS: &str= "\r\n";
 
 #[cfg(not(windows))]
@@ -77,23 +78,28 @@ pub const EMPTY: &str = "";
 use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 /// Other file ownership mask (octal, UNIX only)
+#[allow(dead_code)]
 const OTHER_FILE_RW: u32 = 0o177;
 #[cfg(unix)]
 /// Other directory ownership mask (octal, UNIX only)
+#[allow(dead_code)]
 const OTHER_DIR_RW: u32 = 0o077;
 
 #[cfg(not(unix))]
 /// Sets the file permissions to read and write for the owner (only)
+#[allow(dead_code)]
 fn owner_rw(_: File) {
 }
 
 #[cfg(not(unix))]
 /// Sets the path permissions to read and write for the owner (only)
+#[allow(dead_code)]
 fn path_owner_rw<P: AsRef<Path>>(_path: P) {
 }
 
 #[cfg(unix)]
 /// Sets the file permissions to read and write for the owner (only)
+#[allow(dead_code)]
 fn owner_rw(file: File) {
     let metadata = file.metadata()
         .expect("unable to get file permissions");
@@ -111,6 +117,7 @@ fn owner_rw(file: File) {
 
 #[cfg(unix)]
 /// Sets the path permissions to read and write for the owner (only)
+#[allow(dead_code)]
 fn path_owner_rw<P: AsRef<Path>>(path: P) {
     let file = match OpenOptions::new().read(true).open(path) {
         Ok(f) => f,
@@ -204,6 +211,7 @@ impl System {
     }
 
     /// Reads the file into the string (or default upon failure to read)a
+    #[allow(dead_code)]
     pub fn read_file_to_str(&self, mut dst: &mut String, filename: &str, default: &str) {
         dst.clear();
         File::open(filename)
@@ -212,6 +220,7 @@ impl System {
     }
 
     /// Writes to the file from the string
+    #[allow(dead_code)]
     pub fn write_file_from_str(&self, src: &str, filename: &str) -> Result<(), io::Error> {
         let mut psrc = String::from(src);
         if !psrc.is_empty() {
@@ -226,7 +235,7 @@ impl System {
         }
         let mut path: PathBuf = filename.into();
         if path.pop() {
-            mkdirp::mkdirp(&path)
+            std::fs::create_dir_all(&path)
                 .expect("unable to make config file directory");
             path_owner_rw(&path);
         }
