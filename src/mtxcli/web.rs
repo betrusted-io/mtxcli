@@ -1,4 +1,4 @@
-use rand;
+// use rand;
 use serde::{Serialize,Deserialize};
 use ureq::serde_json::{Value, Map};
 use ureq;
@@ -399,7 +399,9 @@ pub fn client_sync(server: &str, filter: &str, since: &str, timeout: i32,
 }
 
 pub fn gen_txn_id() -> String {
-    let txn_id: u32 = rand::random();
+    // let txn_id: u32 = rand::random();
+    let mut txn_id: u32 = 0;
+    getrandom::getrandom(&txn_id);
     txn_id.to_string()
 }
 
