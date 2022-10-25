@@ -24,9 +24,9 @@ is much easier to develop and debug for the Betrusted environment.
 Before using this program you should:
 
 1. Setup a new user (if needed) using the Matrix protocol
-  * https://matrix.org/docs/projects/try-matrix-now/
+   * https://matrix.org/docs/projects/try-matrix-now/
 2. Create a new room (if needed)
-  * https://doc.matrix.tu-dresden.de/en/rooms/create/
+   * https://doc.matrix.tu-dresden.de/en/rooms/create/
 3. Join the room
 
 ## Usage
