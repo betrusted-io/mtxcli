@@ -7,8 +7,25 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 flexi_logger = { version = "0.24", default_features = false }
+getrandom = "0.2.8"
 log = "0.4"
 percent-encoding = "2.2"
-rand = "0.8"
 serde = { version = "1.0", features = [ "derive" ] }
 ureq = { version = "2.5", features = ["json"] }
+
+# The following support getrandom
+[patch.crates-io.atty]
+git = "https://github.com/xobs/atty.git"
+branch = "add-xous-support"
+
+[patch.crates-io.os_str_bytes]
+git = "https://github.com/xobs/os_str_bytes.git"
+branch = "add-xous-support"
+
+[patch.crates-io.ring]
+git = "https://github.com/betrusted-io/ring-xous.git"
+rev = "09207048c393d524a34f63cf65c85a973012a21d" # use the commitref because we're still updating the branch
+
+[patch.crates-io.getrandom]
+git = "https://github.com/xobs/getrandom.git"
+branch = "xous-support-do-not-merge"

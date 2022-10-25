@@ -49,6 +49,8 @@ impl<'a> Interactive<'a> {
         }
         let mut quit = false;
         let stdin = io::stdin();
+        self.mtxcli.prompt();
+        println!("Welcome to {}. Type /help for available commands", self.mtxcli.app);
         for line in stdin.lock().lines() {
             let mut cmdline = line?;
             let maybe_verb = tokenize(&mut cmdline);
