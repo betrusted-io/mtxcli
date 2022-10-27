@@ -218,7 +218,7 @@ impl Mtxcli {
                 value.to_string()
             }
             Err(e) => {
-                error!("error getting key {}: {:?}", USER_KEY, e);
+                error!("error getting key {}: {:?}", key, e);
                 default.to_string()
             }
         }
@@ -253,7 +253,10 @@ impl Mtxcli {
         self.read_messages();
         if text.len() > 0 {
             if web::send_message(&self.server, &self.room_id, &text, &self.token) {
-                println!("{}> {}", self.username, text);
+                // The following is not required, because we will get what
+                // the user said when we read_messages
+                // println!("{}> {}", self.username, text);
+                self.read_messages(); // update since to include what user said
             } else {
                 println!("{}> {} # FAILED TO SEND", self.username, text);
             }
@@ -303,6 +306,7 @@ impl Mtxcli {
         self.unset(TOKEN_KEY).unwrap();
         self.prompt();
         println!("logged out");
+        self.logged_in = false;
     }
 
     // assume logged in, token is valid
@@ -371,8 +375,6 @@ impl Mtxcli {
     // assume logged in, token is valid, room_id is valid, user is valid,
     // and filter is valid
     pub fn read_messages(&mut self) {
-        // let mut n: usize = 1; // number of messages recieved
-        // while n > 0 {
         if let Some((since, messages)) = web::client_sync(&self.server, &self.filter,
                                                           &self.since, MTX_TIMEOUT,
                                                           &self.room_id, &self.token) {
@@ -380,19 +382,8 @@ impl Mtxcli {
             self.since = since;
             debug!("since = {}", self.since);
             if messages.len() > 0 {
-                print!("{}", messages); // should already have newline
-                // let nl: Vec<&str> = messages.matches("\n").collect();
-                // n = nl.len();
-                // } else {
-                //     n = 0;
-                // }
+                print!("{}", messages);
             }
-            // else {
-            //     self.prompt();
-            //     println!("unable to read messages");
-            //     // n = 0;
-            // }
-            // }
         }
     }
 }

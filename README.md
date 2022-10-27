@@ -65,6 +65,14 @@ tmarble@espoir 997 :)
 
 ```
 
+## Asciinema
+
+View the terminal session in Asciinema!
+
+_NOTE:_ You will need to set your password
+
+[![asciicast](https://asciinema.org/a/532627.svg)](https://asciinema.org/a/532627)
+
 ## Contribution Guidelines
 
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.0%20adopted-ff69b4.svg)](CODE_OF_CONDUCT.md)
