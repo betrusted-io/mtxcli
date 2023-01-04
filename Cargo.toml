@@ -1,6 +1,6 @@
 [package]
 name = "mtxcli"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Tom Marble <tmarble@info9.net>"]
 edition = "2021"
 

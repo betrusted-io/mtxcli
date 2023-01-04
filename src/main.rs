@@ -11,9 +11,9 @@ const QUALIFIER: &str = "io";
 /// organization
 const ORGANIZATION: &str = "Betrusted";
 /// application
-const APP: &str = "mtxcli";
+const APP: &str = env!("CARGO_PKG_NAME");
 /// version
-const VERSION: &str= "0.5.0";
+const VERSION: &str= env!("CARGO_PKG_VERSION");
 
 /// The main **mtxcli** program
 fn main() {

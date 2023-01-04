@@ -5,12 +5,13 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{Read, Write, Error};
+use std::io::{Read, Write, Error, ErrorKind};
 use std::path::PathBuf;
 
 use clap::Parser;
 
 mod interactive;
+mod migrations;  use migrations::run_migrations;
 mod parking;
 mod system;      use system::System;
 mod url;
@@ -25,6 +26,8 @@ const SERVER_KEY: &str = "server";
 const TOKEN_KEY: &str = "_token";
 const USER_KEY: &str = "user";
 const USERNAME_KEY: &str = "username";
+const VERSION_KEY: &str = "_version";
+const CURRENT_VERSION_KEY: &str = "__version";
 
 const HTTPS: &str = "https://";
 const SERVER_MATRIX: &str = "https://matrix.org";
@@ -115,6 +118,7 @@ impl Mtxcli {
         } else {
             Action::Default
         };
+        run_migrations(self);
     }
 
     /// Do the action, return the exit code
@@ -133,18 +137,23 @@ impl Mtxcli {
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), Error> {
-        let mut keypath = PathBuf::new();
-        keypath.push(&self.system.config_dir);
-        std::fs::create_dir_all(&keypath)?;
-        keypath.push(key);
-        File::create(keypath)?.write_all(value.as_bytes())?;
-        match key { // special case side effects
-            USER_KEY => { self.set_user(value); }
-            PASSWORD_KEY => { self.set_password(); }
-            ROOM_KEY => { self.set_room(); }
-            _ => { }
+        if key.starts_with("__") {
+            Err(Error::new(ErrorKind::PermissionDenied,
+                           "may not set a variable beginning with __ "))
+        } else {
+            let mut keypath = PathBuf::new();
+            keypath.push(&self.system.config_dir);
+            std::fs::create_dir_all(&keypath)?;
+            keypath.push(key);
+            File::create(keypath)?.write_all(value.as_bytes())?;
+            match key { // special case side effects
+                USER_KEY => { self.set_user(value); }
+                PASSWORD_KEY => { self.set_password(); }
+                ROOM_KEY => { self.set_room(); }
+                _ => { }
+            }
+            Ok(())
         }
-        Ok(())
     }
 
     pub fn set_user(&mut self, value: &str) {
@@ -185,27 +194,36 @@ impl Mtxcli {
     }
 
     pub fn unset(&mut self, key: &str) -> Result<(), Error> {
-        let mut keypath = PathBuf::new();
-        keypath.push(&self.system.config_dir);
-        std::fs::create_dir_all(&keypath)?;
-        keypath.push(key);
-        if std::fs::metadata(&keypath).is_ok() { // keypath exists
-            std::fs::remove_file(keypath)?;
+        if key.starts_with("__") {
+            Err(Error::new(ErrorKind::PermissionDenied,
+                           "may not unset a variable beginning with __ "))
+        } else {
+            let mut keypath = PathBuf::new();
+            keypath.push(&self.system.config_dir);
+            std::fs::create_dir_all(&keypath)?;
+            keypath.push(key);
+            if std::fs::metadata(&keypath).is_ok() { // keypath exists
+                std::fs::remove_file(keypath)?;
+            }
+            Ok(())
         }
-        Ok(())
     }
 
     pub fn get(&mut self, key: &str) -> Result<Option<String>, Error> {
-        let mut keypath = PathBuf::new();
-        keypath.push(&self.system.config_dir);
-        std::fs::create_dir_all(&keypath)?;
-        keypath.push(key);
-        if let Ok(mut file)= File::open(keypath) {
-            let mut value = String::new();
-            file.read_to_string(&mut value)?;
-            Ok(Some(value))
+        if key.eq(CURRENT_VERSION_KEY) {
+            Ok(Some(self.version.to_string()))
         } else {
-            Ok(None)
+            let mut keypath = PathBuf::new();
+            keypath.push(&self.system.config_dir);
+            std::fs::create_dir_all(&keypath)?;
+            keypath.push(key);
+            if let Ok(mut file)= File::open(keypath) {
+                let mut value = String::new();
+                file.read_to_string(&mut value)?;
+                Ok(Some(value))
+            } else {
+                Ok(None)
+            }
         }
     }
 
@@ -362,7 +380,8 @@ impl Mtxcli {
         if self.filter.len() > 0 {
             true
         } else {
-            if let Some(new_filter) = web::get_filter(&self.user, &self.server, &self.token) {
+            if let Some(new_filter) = web::get_filter(&self.user, &self.server,
+                                                      &self.room_id, &self.token) {
                 self.set(FILTER_KEY, &new_filter).unwrap();
                 self.filter = new_filter;
                 true
